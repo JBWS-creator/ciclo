@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planejador de Ciclo de Estudos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.5); cursor: pointer; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .badge-original { background-color: #6366f1; color: white; }
+        .badge-revision-4 { background-color: #10b981; color: white; }
+        .badge-revision-10 { background-color: #f59e0b; color: white; }
+        body { font-family: 'Inter', sans-serif; }
+
+        /* Estilos para blocos de tempo */
+        .time-block {
+            width: 1.75rem; /* w-7 */
+            height: 1.75rem; /* h-7 */
+            border: 1px solid #cbd5e1; /* border-gray-300 */
+            border-radius: 0.25rem; /* rounded */
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem; /* text-xs */
+            font-weight: 500; /* font-medium */
+            color: #64748b; /* text-gray-500 */
+            background-color: #f8fafc; /* bg-gray-50 */
+            cursor: pointer;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            margin-right: 0.25rem; /* mr-1 */
+            user-select: none; /* Evitar seleção de texto */
+        }
+        .time-block:hover {
+            border-color: #94a3b8; /* hover:border-gray-400 */
+        }
+        .time-block.completed {
+            background-color: #d1fae5; /* bg-green-100 */
+            border-color: #6ee7b7; /* border-green-300 */
+            color: #065f46; /* text-green-800 */
+        }
+         .time-block.completed:hover {
+             background-color: #a7f3d0; /* hover:bg-green-200 */
+         }
+
+         /* Estilo para visualização de notas */
+         .notes-preview {
+             font-size: 0.875rem; /* text-sm */
+             color: #4b5563; /* text-gray-700 */
+             margin-top: 0.5rem;
+             white-space: pre-wrap; /* Preserva quebras de linha */
+             word-break: break-word; /* Quebra palavras longas */
+         }
+         .notes-preview.collapsed {
+             display: -webkit-box;
+             -webkit-line-clamp: 2; /* Limita a 2 linhas */
+             -webkit-box-orient: vertical;
+             overflow: hidden;
+             text-overflow: ellipsis;
+         }
+         .toggle-notes {
+             font-size: 0.75rem; /* text-xs */
+             color: #6366f1; /* text-indigo-500 */
+             cursor: pointer;
+             margin-top: 0.25rem;
+             display: inline-block;
+         }
+
+         /* Estilo para vincular revisões - REMOVIDO RECUO E LINHA VERTICAL */
+         .topic-item[data-study-type="revision-4"],
+         .topic-item[data-study-type="revision-10"] {
+            /* padding-left: 1.5rem; */ /* Removido */
+            /* border-left: 3px solid #a5b4fc; */ /* Removido */
+            /* margin-left: 0.5rem; */ /* Removido */
+         }
+          .topic-item[data-study-type="revision-4"] {
+              border-left-color: #a7f3d0; /* Mantido, embora não visível sem border-left */
+          }
+           .topic-item[data-study-type="revision-10"] {
+              border-left-color: #fed7aa; /* Mantido, embora não visível sem border-left */
+          }
+
+        /* Estilos para a lista principal (agora unificada e vertical) */
+        #topicList {
+            display: block; /* Layout de bloco vertical */
+            overflow-x: visible; /* Remove scroll horizontal */
+            padding-bottom: 0; /* Remove padding extra */
+            gap: 0; /* Remove gap */
+        }
+
+        #topicList .topic-item {
+            flex: none; /* Remove flex properties */
+            width: 100%; /* Ocupa a largura total */
+            max-width: none; /* Remove max-width */
+            margin-bottom: 0.75rem; /* Adiciona espaço entre os itens verticalmente */
+        }
+         #topicList .topic-item:last-child {
+             margin-bottom: 0; /* Remove margin do último item */
+         }
+
+
+        #topicList .emptyState {
+            flex: none; /* Remove flex property */
+            width: 100%; /* Ocupa toda a largura disponível quando vazio */
+            text-align: center;
+            padding: 2.5rem 0; /* py-10 */
+        }
+
+        /* Estilos para a navegação de ciclo */
+        .cycle-navigation {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 1.5rem;
+            gap: 1rem;
+        }
+
+        .cycle-navigation button {
+            padding: 0.5rem 1rem;
+            background-color: #6366f1;
+            color: white;
+            border-radius: 0.5rem;
+            transition: background-color 0.2s ease;
+        }
+
+        .cycle-navigation button:hover:not(:disabled) {
+            background-color: #4f46e5;
+        }
+
+        .cycle-navigation button:disabled {
+            background-color: #a5b4fc;
+            cursor: not-allowed;
+        }
+
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <header class="mb-10 text-center">
+            <h1 class="text-4xl font-bold text-indigo-700 mb-2">Planejador de Ciclo de Estudos</h1>
+            <p class="text-gray-600">Planeje e acompanhe seu tempo de estudo com revisões automáticas</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8"> <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-6 h-fit">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">
+                    <i class="fas fa-plus-circle mr-2 text-indigo-500"></i>
+                    Adicionar Tópicos de Estudo
+                </h2>
+                <form id="studyForm" class="space-y-4">
+                    <div>
+                        <label for="subject" class="block text-sm font-medium text-gray-700 mb-1">Matéria</label>
+                        <input type="text" id="subject" required
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                               placeholder="Ex: Matemática">
+                    </div>
+                    <div>
+                        <label for="topicsList" class="block text-sm font-medium text-gray-700 mb-1">Tópicos (Um por linha)</label>
+                        <textarea id="topicsList" rows="5" required
+                                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                                  placeholder="Ex: Trigonometria&#10;Geometria Analítica&#10;Cálculo Diferencial"></textarea>
+                    </div>
+                     <div>
+                        <label for="notes" class="block text-sm font-medium text-gray-700 mb-1">Notas (Opcional - Aplica-se a todos os tópicos)</label>
+                        <textarea id="notes" rows="3"
+                                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                                  placeholder="Pontos chave, referências, etc."></textarea>
+                    </div>
+                    <div>
+                        <label for="studyDate" class="block text-sm font-medium text-gray-700 mb-1">Data do Primeiro Estudo para o PRIMEIRO tópico</label>
+                        <input type="date" id="studyDate" required
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                    </div>
+                    <div class="flex space-x-3 pt-2">
+                        <button type="submit" id="addBtn" class="flex-1 bg-indigo-600 text-white py-2 px-4 rounded-lg hover:bg-indigo-700 transition flex items-center justify-center">
+                            <i class="fas fa-plus mr-2"></i> Adicionar Tópicos
+                        </button>
+                        <button type="button" id="updateBtn" class="hidden flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition flex items-center justify-center">
+                            <i class="fas fa-save mr-2"></i> Atualizar Tópico
+                        </button>
+                        <button type="button" id="cancelBtn" class="hidden bg-gray-500 text-white py-2 px-4 rounded-lg hover:bg-gray-600 transition flex items-center justify-center">
+                            Cancelar Edição
+                        </button>
+                    </div>
+                </form>
+
+                <div class="mt-8">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-cog mr-2 text-indigo-500"></i>
+                        Configurações
+                    </h2>
+                    <div>
+                        <label for="blockSize" class="block text-sm font-medium text-gray-700 mb-1">Duração do Bloco de Estudo (minutos)</label>
+                        <input type="number" id="blockSize" value="30" min="10" step="5"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                    </div>
+                </div>
+
+
+                <div class="mt-8">
+                    <h2 class="text-xl font-semibold text-gray-800 mb-4">
+                        <i class="fas fa-info-circle mr-2 text-indigo-500"></i>
+                        Instruções
+                    </h2>
+                    <ul class="space-y-2 text-sm text-gray-600">
+                         <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>Adicione uma matéria e liste vários tópicos (um por linha).</span>
+                        </li>
+                         <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>As sessões de estudo originais serão agendadas sequencialmente a partir da data informada.</span>
+                        </li>
+                         <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>Revisões (4 e 10 dias) são criadas AUTOMATICAMENTE quando você marca o PRIMEIRO bloco de estudo de uma sessão ORIGINAL como concluído.</span>
+                        </li>
+                         <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>Clique nos quadrados para marcar blocos de estudo concluídos na duração configurada.</span>
+                        </li>
+                        <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>A lista principal mostra um ciclo de 7 sessões agendadas (originais e revisões) por vez.</span>
+                        </li>
+                         <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>Use os botões "Anterior" e "Próximo" para navegar entre os ciclos.</span>
+                        </li>
+                         <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>Use a busca para filtrar seus tópicos em todos os ciclos.</span>
+                        </li>
+                         <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>Edite tópicos originais (revisões e tempo reiniciam). Exclua qualquer item pela lixeira.</span>
+                        </li>
+                         <li class="flex items-start">
+                            <i class="fas fa-check-circle text-indigo-400 mt-1 mr-2 flex-shrink-0"></i>
+                            <span>As revisões são marcadas com uma linha colorida (se a borda estiver ativa).</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="lg:col-span-1 bg-white rounded-xl shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold text-gray-800">
+                        <i class="fas fa-calendar-alt mr-2 text-indigo-500"></i>
+                        Ciclo de Estudos
+                    </h2>
+                    <div class="text-sm text-gray-500">
+                        <span id="topicCount">0</span> sessões
+                    </div>
+                </div>
+                <div class="mb-4 flex items-center">
+                    <input type="text" id="searchInput" placeholder="Buscar tópicos..."
+                           class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition">
+                    <button id="clearSearch" class="ml-2 p-2 text-gray-500 hover:text-indigo-600" aria-label="Limpar busca">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                 <div id="topicList" class="space-y-3 pr-2 max-h-[32rem] overflow-y-auto">
+                     <div class="emptyState text-center text-gray-400" id="emptyState">
+                        <i class="fas fa-book-open text-4xl mb-3"></i>
+                        <p>Nenhuma sessão de estudo agendada ainda.</p>
+                        <p class="text-sm mt-1">Adicione seus primeiros tópicos usando o formulário.</p>
+                    </div>
+                </div>
+                 <div class="cycle-navigation">
+                     <button id="prevCycleBtn" disabled><i class="fas fa-arrow-left mr-2"></i> Anterior</button>
+                     <span id="cycleInfo" class="text-sm text-gray-600">Sessões 1-7</span>
+                     <button id="nextCycleBtn"><i class="fas fa-arrow-right mr-2"></i> Próximo</button>
+                 </div>
+            </div>
+
+             </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // --- Elementos DOM ---
+            const studyForm = document.getElementById('studyForm');
+            const subjectInput = document.getElementById('subject');
+            const topicsListInput = document.getElementById('topicsList');
+            const notesInput = document.getElementById('notes');
+            const studyDateInput = document.getElementById('studyDate');
+            const addBtn = document.getElementById('addBtn');
+            const updateBtn = document.getElementById('updateBtn');
+            const cancelBtn = document.getElementById('cancelBtn');
+            const topicList = document.getElementById('topicList'); // Agora a lista principal unificada
+            const emptyState = document.getElementById('emptyState');
+            const topicCount = document.getElementById('topicCount');
+            const searchInput = document.getElementById('searchInput');
+            const clearSearch = document.getElementById('clearSearch');
+            const blockSizeInput = document.getElementById('blockSize');
+
+            // Elementos de navegação de ciclo
+            const prevCycleBtn = document.getElementById('prevCycleBtn');
+            const nextCycleBtn = document.getElementById('nextCycleBtn');
+            const cycleInfoSpan = document.getElementById('cycleInfo');
+
+            // --- Variáveis de Estado ---
+            let topics = []; // Armazena todos os tópicos (original e revisões) com dados de tempo
+            let editingId = null; // ID do tópico original em edição
+            let globalBlockSize = 30; // Duração padrão do bloco
+
+            // Variáveis para controle do ciclo de exibição
+            const itemsPerCycle = 7; // Quantos itens mostrar por "ciclo"
+            let currentCycleStartIndex = 0; // Índice inicial do ciclo atual
+
+            // --- Inicialização ---
+            function init() {
+                setDefaultDate();
+                loadTopics(); // Carrega tópicos E configuração de bloco
+                addEventListeners();
+                // Renderização inicial - agora usa renderTopicList para o ciclo
+                renderTopicList();
+                updateTopicCount();
+                // Define o valor inicial do input de configuração
+                blockSizeInput.value = globalBlockSize;
+            }
+
+            // --- Configuração dos Ouvintes de Eventos ---
+            function addEventListeners() {
+                studyForm.addEventListener('submit', handleFormSubmit);
+                cancelBtn.addEventListener('click', cancelEdit);
+                searchInput.addEventListener('input', handleSearch);
+                clearSearch.addEventListener('click', clearSearchHandler);
+                blockSizeInput.addEventListener('change', handleBlockSizeChange);
+
+                // Delegação de eventos para botões de editar/excluir E blocos de tempo na lista principal
+                topicList.addEventListener('click', handleListInteraction);
+
+                // Delegação de evento para expandir/colapsar notas na lista principal
+                topicList.addEventListener('click', handleNotesToggle);
+
+                // Ouvintes para navegação de ciclo
+                prevCycleBtn.addEventListener('click', showPreviousCycle);
+                nextCycleBtn.addEventListener('click', showNextCycle);
+            }
+
+             /**
+             * Lida com cliques dentro da lista principal.
+             * Delega para edição, exclusão ou marcação de tempo.
+             * @param {Event} e - O evento de clique.
+             */
+            function handleListInteraction(e) {
+                const editButton = e.target.closest('.edit-btn');
+                const deleteButton = e.target.closest('.delete-btn');
+                const timeBlock = e.target.closest('.time-block');
+
+                if (editButton) {
+                    startEdit(editButton.dataset.id);
+                } else if (deleteButton) {
+                    deleteTopic(deleteButton.dataset.id);
+                } else if (timeBlock) {
+                    const topicId = timeBlock.dataset.id;
+                    const blockIndex = parseInt(timeBlock.dataset.index, 10);
+                    toggleTimeBlock(topicId, blockIndex);
+                }
+            }
+
+             /**
+              * Lida com o clique no botão de expandir/colapsar notas.
+              * @param {Event} e - O evento de clique.
+              */
+             function handleNotesToggle(e) {
+                 const toggleButton = e.target.closest('.toggle-notes');
+                 if (toggleButton) {
+                     const notesElement = toggleButton.previousElementSibling; // O elemento das notas é o anterior
+                     notesElement.classList.toggle('collapsed');
+                     toggleButton.textContent = notesElement.classList.contains('collapsed') ? 'Mostrar mais...' : 'Mostrar menos...';
+                 }
+             }
+
+             /**
+              * Lida com a mudança no valor da duração do bloco de estudo.
+              */
+             function handleBlockSizeChange() {
+                 const newSize = parseInt(blockSizeInput.value, 10);
+                 if (!isNaN(newSize) && newSize >= 10) {
+                     globalBlockSize = newSize;
+                     saveTopics(); // Salva a nova configuração
+                     // Re-renderiza a lista principal para atualizar a exibição dos blocos
+                     renderTopicList();
+                 } else {
+                     blockSizeInput.value = globalBlockSize;
+                 }
+             }
+
+
+            // --- Funções Lógicas Principais ---
+
+            function handleFormSubmit(e) {
+                e.preventDefault();
+                const subject = subjectInput.value.trim();
+                const topicsListText = topicsListInput.value.trim();
+                const notes = notesInput.value.trim();
+                const studyDate = studyDateInput.value;
+
+                if (!subject || !topicsListText || !studyDate) {
+                    alert('Por favor, preencha os campos obrigatórios (Matéria, Tópicos, Data).');
+                    return;
+                }
+
+                const topicsArray = topicsListText.split('\n')
+                                                 .map(topic => topic.trim())
+                                                 .filter(topic => topic !== '');
+
+                if (topicsArray.length === 0) {
+                     alert('Por favor, liste pelo menos um tópico.');
+                     return;
+                }
+
+                if (editingId !== null) {
+                    const originalTopicBeingEdited = topics.find(t => t.id === editingId && t.studyType === 'original');
+                    if (originalTopicBeingEdited) {
+                         const topicToUpdate = topicsArray.length > 0 ? topicsArray[0] : originalTopicBeingEdited.topic;
+                         updateExistingTopic(editingId, subject, topicToUpdate, notes, studyDate);
+                    } else {
+                         alert("Erro ao tentar atualizar. Por favor, selecione um tópico original para editar.");
+                    }
+                    cancelEdit();
+                } else {
+                    // Adiciona múltiplos tópicos com datas sequenciais
+                    addNewTopics(subject, topicsArray, notes, studyDate);
+                }
+
+                saveTopics();
+                // Após adicionar novos tópicos, volte para o início do ciclo para vê-los
+                currentCycleStartIndex = 0;
+                renderTopicList(); // Renderiza a lista principal
+                updateTopicCount();
+                resetForm();
+            }
+
+            /**
+             * Adiciona múltiplos tópicos e agenda suas sessões originais sequencialmente.
+             * As revisões SÓ serão adicionadas quando a sessão original for marcada como concluída.
+             * @param {string} subject - A matéria.
+             * @param {string[]} topicsArray - Array de strings, cada uma sendo um tópico.
+             * @param {string} notes - Notas para todos os tópicos (opcional).
+             * @param {string} initialStudyDate - Data do primeiro estudo para o PRIMEIRO tópico.
+             */
+            function addNewTopics(subject, topicsArray, notes, initialStudyDate) {
+                 let currentDate = new Date(initialStudyDate + 'T00:00:00');
+
+                 topicsArray.forEach((topic, index) => {
+                     const originalId = Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9); // ID único para cada tópico original
+
+                     // Adiciona original com rastreamento de tempo zerado e notas
+                     topics.push({
+                         id: originalId, subject, topic, notes,
+                         studyDate: currentDate.toISOString().split('T')[0], // Usa a data atual para este tópico
+                         studyType: 'original',
+                         timeStudied: [false, false] // Novo campo: [bloco 30min 1, bloco 30min 2]
+                     });
+
+                     // Incrementa a data para o próximo tópico
+                     currentDate.setDate(currentDate.getDate() + 1);
+                 });
+                 console.log("Tópicos originais adicionados:", topics); // Log para debug
+            }
+
+
+            function updateExistingTopic(idToUpdate, newSubject, newTopic, newNotes, newStudyDate) {
+                // Remove revisões existentes associadas a este tópico original
+                topics = topics.filter(t => t.originalId !== idToUpdate);
+
+                // Atualiza o tópico original, RESETA o tempo estudado e atualiza notas
+                topics = topics.map(t =>
+                    t.id === idToUpdate && t.studyType === 'original'
+                        ? { ...t, subject: newSubject, topic: newTopic, notes: newNotes, studyDate: newStudyDate, timeStudied: [false, false] }
+                        : t
+                );
+                console.log("Tópico original atualizado:", idToUpdate, topics.find(t => t.id === idToUpdate)); // Log para debug
+
+                // NOTA: Revisões para este tópico serão recriadas quando a sessão original for marcada como concluída novamente.
+            }
+
+             function startEdit(id) {
+                const topicToEdit = topics.find(t => t.id === id);
+                if (!topicToEdit || topicToEdit.studyType !== 'original') {
+                    alert("Não é possível editar revisões diretamente. Edite o tópico original.");
+                    return;
+                }
+                editingId = id;
+                subjectInput.value = topicToEdit.subject;
+                topicsListInput.value = topicToEdit.topic; // Preenche a textarea com o UM tópico sendo editado
+                notesInput.value = topicToEdit.notes || '';
+                studyDateInput.value = topicToEdit.studyDate;
+
+                addBtn.classList.add('hidden');
+                updateBtn.classList.remove('hidden');
+                cancelBtn.classList.remove('hidden');
+                topicsListInput.disabled = true;
+                topicsListInput.classList.add('bg-gray-100', 'cursor-not-allowed');
+
+
+                studyForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                subjectInput.focus();
+            }
+
+            function cancelEdit() {
+                editingId = null;
+                resetForm();
+                addBtn.classList.remove('hidden');
+                updateBtn.classList.add('hidden');
+                cancelBtn.classList.add('hidden');
+                topicsListInput.disabled = false;
+                topicsListInput.classList.remove('bg-gray-100', 'cursor-not-allowed');
+            }
+
+             function deleteTopic(idToDelete) {
+                const topicToDelete = topics.find(t => t.id === idToDelete);
+                if (!topicToDelete) return;
+
+                const confirmationMessage = topicToDelete.studyType === 'original'
+                    ? 'Tem certeza que deseja excluir este tópico e todas as suas revisões agendadas?'
+                    : 'Tem certeza que deseja excluir esta sessão de revisão?';
+                if (!confirm(confirmationMessage)) return;
+
+                if (topicToDelete.studyType === 'original') {
+                    // Remove o tópico original e todas as revisões associadas a ele
+                    topics = topics.filter(t => t.id !== idToDelete && t.originalId !== idToDelete);
+                    if (editingId === idToDelete) cancelEdit(); // Se o tópico em edição for excluído, cancela a edição
+                    console.log("Tópico original e revisões removidas para o ID:", idToDelete); // Log para debug
+                } else {
+                    // Remove apenas a sessão de revisão específica
+                    const deletedTopicId = topicToDelete.id;
+                    topics = topics.filter(t => t.id !== idToDelete);
+                     console.log("Sessão de revisão removida com ID:", deletedTopicId); // Log para debug
+                }
+
+                saveTopics();
+                // Após exclusão, re-renderiza o ciclo atual
+                renderTopicList();
+                updateTopicCount();
+            }
+
+             /**
+              * Alterna o estado (concluído/não concluído) de um bloco de tempo.
+              * Se o primeiro bloco de um estudo original for marcado, agenda as revisões.
+              * @param {string} topicId - O ID do tópico.
+              * @param {number} blockIndex - O índice do bloco (0 ou 1).
+              */
+             function toggleTimeBlock(topicId, blockIndex) {
+                 console.log(`toggleTimeBlock chamado para ID: ${topicId}, Bloco: ${blockIndex}`); // Log inicial
+
+                 const topicIndex = topics.findIndex(t => t.id === topicId);
+                 if (topicIndex === -1) {
+                     console.error(`Tópico com ID ${topicId} não encontrado.`); // Log de erro se o tópico não for encontrado
+                     return;
+                 }
+                 if (blockIndex < 0 || blockIndex > 1) {
+                      console.error(`Índice de bloco inválido: ${blockIndex}`); // Log de erro se o índice do bloco for inválido
+                      return;
+                 }
+
+
+                 const topic = topics[topicIndex];
+                 const wasCompleted = topic.timeStudied[blockIndex];
+
+                 console.log("Estado do tópico ANTES da modificação:", JSON.parse(JSON.stringify(topic))); // Log profundo antes
+                 console.log(`Estado de timeStudied ANTES: [${topic.timeStudied.join(', ')}]`); // Log do array antes
+
+                 // Alterna o estado do bloco específico
+                 topic.timeStudied[blockIndex] = !wasCompleted;
+
+                 console.log("Estado do tópico DEPOIS da modificação:", JSON.parse(JSON.stringify(topic))); // Log profundo depois
+                 console.log(`Estado de timeStudied DEPOIS: [${topic.timeStudied.join(', ')}]`); // Log do array depois
+
+
+                 // Lógica para agendar revisões APENAS quando o PRIMEIRO bloco de um estudo ORIGINAL é marcado como CONCLUÍDO
+                 if (topic.studyType === 'original' && blockIndex === 0 && topic.timeStudied[0] === true && !wasCompleted) {
+                     console.log("Primeiro bloco de estudo original marcado como concluído. Verificando revisões..."); // Log para debug
+
+                     const originalStudyDate = new Date(topic.studyDate + 'T00:00:00');
+
+                     // Agenda revisão de 4 dias
+                     const revision4Date = new Date(originalStudyDate);
+                     revision4Date.setDate(originalStudyDate.getDate() + 4);
+                     // Verifica se a revisão de 4 dias já existe antes de adicionar para evitar duplicatas
+                     if (!topics.some(t => t.originalId === topic.id && t.studyType === 'revision-4')) {
+                          const rev4Topic = {
+                              id: topic.id + '-4', subject: topic.subject, topic: topic.topic, notes: topic.notes,
+                              studyDate: revision4Date.toISOString().split('T')[0],
+                              studyType: 'revision-4', originalId: topic.id, timeStudied: [false, false]
+                          };
+                          topics.push(rev4Topic);
+                          console.log("Revisão de 4 dias adicionada:", rev4Topic); // Log para debug
+                     } else {
+                          console.log("Revisão de 4 dias já existe para o tópico original:", topic.id); // Log para debug
+                     }
+
+
+                     // Agenda revisão de 10 dias
+                     const revision10Date = new Date(originalStudyDate);
+                     revision10Date.setDate(originalStudyDate.getDate() + 10);
+                      // Verifica se a revisão de 10 dias já existe antes de adicionar para evitar duplicatas
+                     if (!topics.some(t => t.originalId === topic.id && t.studyType === 'revision-10')) {
+                         const rev10Topic = {
+                             id: topic.id + '-10', subject: topic.subject, topic: topic.topic, notes: topic.notes,
+                             studyDate: revision10Date.toISOString().split('T')[0],
+                             studyType: 'revision-10', originalId: topic.id, timeStudied: [false, false]
+                         };
+                         topics.push(rev10Topic);
+                         console.log("Revisão de 10 dias adicionada:", rev10Topic); // Log para debug
+                     } else {
+                          console.log("Revisão de 10 dias já existe para o tópico original:", topic.id); // Log para debug
+                     }
+
+                 }
+                 // Lógica para remover revisões se o PRIMEIRO bloco de um estudo ORIGINAL for DESMARCADO
+                 else if (topic.studyType === 'original' && blockIndex === 0 && topic.timeStudied[0] === false && wasCompleted) {
+                      console.log("Primeiro bloco de estudo original desmarcado. Removendo revisões associadas..."); // Log para debug
+                      // Remove as revisões associadas a este tópico original
+                      const revisionsToRemove = topics.filter(t => t.originalId === topic.id && (t.studyType === 'revision-4' || t.studyType === 'revision-10'));
+                      revisionsToRemove.forEach(rev => console.log("Removendo revisão:", rev.id)); // Log para debug
+                      topics = topics.filter(t => t.originalId !== topic.id || (t.studyType !== 'revision-4' && t.studyType !== 'revision-10'));
+                      console.log("Revisões removidas para o tópico original:", topic.id); // Log para debug
+                 }
+
+                 console.log("Estado final do array topics após toggle:", JSON.parse(JSON.stringify(topics))); // Log do array completo após a operação
+
+                 saveTopics();
+                 // Re-renderiza a lista principal para refletir as mudanças
+                 renderTopicList();
+                 updateTopicCount();
+             }
+
+            /**
+             * Filtra os tópicos com base no termo de busca.
+             * @returns {Array} Array de tópicos filtrados.
+             */
+            function filterTopics() {
+                 const searchTerm = searchInput.value.toLowerCase().trim();
+                 if (!searchTerm) {
+                     return topics; // Retorna todos se a busca estiver vazia
+                 }
+                 // Filtra se houver termo de busca
+                 const filtered = topics.filter(topic =>
+                     topic.subject.toLowerCase().includes(searchTerm) ||
+                     topic.topic.toLowerCase().includes(searchTerm) ||
+                     (topic.notes && topic.notes.toLowerCase().includes(searchTerm))
+                 );
+                 console.log("Tópicos filtrados ('" + searchTerm + "'):", filtered); // Log para debug
+                 return filtered;
+            }
+
+            function handleSearch() {
+                // Ao buscar, re-renderiza a lista a partir do início
+                currentCycleStartIndex = 0; // Reseta para o início ao buscar
+                renderTopicList();
+                 // A contagem de tópicos agora deve refletir os tópicos filtrados
+                updateTopicCount(filterTopics().length);
+            }
+
+            function clearSearchHandler() {
+                searchInput.value = '';
+                currentCycleStartIndex = 0; // Reseta para o início
+                renderTopicList();
+                updateTopicCount(); // Atualiza a contagem para todos os tópicos
+                searchInput.focus();
+            }
+
+             // --- Funções de Renderização e Ciclo ---
+
+             /**
+              * Renderiza a lista principal de sessões (o ciclo atual).
+              */
+            function renderTopicList() {
+                 // Filtra os tópicos primeiro (se houver termo de busca)
+                 const filteredTopics = filterTopics();
+
+                 // Ordena os tópicos filtrados por data, depois por tipo (original antes de revisões no mesmo dia), matéria e tópico
+                 filteredTopics.sort((a, b) =>
+                     a.studyDate.localeCompare(b.studyDate) ||
+                     // Ordena originais antes de revisões na mesma data
+                     (a.studyType === 'original' ? -1 : (b.studyType === 'original' ? 1 : 0)) ||
+                     a.subject.localeCompare(b.subject) ||
+                     a.topic.localeCompare(b.topic)
+                 );
+                 console.log("Tópicos ordenados para renderização:", filteredTopics.map(t => ({ id: t.id, subject: t.subject, topic: t.topic, date: t.studyDate, type: t.studyType, timeStudied: t.timeStudied }))); // Log para debug
+
+
+                 // Calcula o slice para o ciclo atual
+                 const cycleTopics = filteredTopics.slice(currentCycleStartIndex, currentCycleStartIndex + itemsPerCycle);
+                 console.log(`Renderizando ciclo: ${currentCycleStartIndex} a ${currentCycleStartIndex + itemsPerCycle - 1} (total filtrado: ${filteredTopics.length})`, cycleTopics.map(t => ({ id: t.id, subject: t.subject, topic: t.topic, date: t.studyDate, type: t.studyType, timeStudied: t.timeStudied }))); // Log para debug
+
+
+                 topicList.innerHTML = ''; // Limpa antes de renderizar
+
+                 if (cycleTopics.length === 0) {
+                      // Se não houver tópicos no ciclo atual (pode acontecer ao navegar para frente demais ou com busca)
+                      // Verifica se há tópicos *totais* ou *filtrados*. Se não houver nenhum, mostra o estado vazio geral.
+                     if (topics.length === 0) {
+                         emptyState.style.display = 'block';
+                         topicList.appendChild(emptyState);
+                     } else {
+                          // Se há tópicos, mas nenhum no slice atual, mostra uma mensagem indicando
+                         topicList.innerHTML = `
+                             <div class="text-center py-10 text-gray-400">
+                                 <i class="fas fa-calendar-check text-4xl mb-3"></i>
+                                 <p>Nenhuma sessão neste ciclo.</p>
+                                 <p class="text-sm mt-1">Use os botões de navegação ou limpe a busca.</p>
+                             </div>
+                         `;
+                         emptyState.style.display = 'none'; // Garante que o estado vazio geral está oculto
+                     }
+                 } else {
+                     emptyState.style.display = 'none'; // Oculta o estado vazio
+                     topicList.innerHTML = cycleTopics.map(topic => createTopicItemHTML(topic, 'main-list')).join('');
+                 }
+
+                 // Atualiza o estado dos botões de navegação e a informação do ciclo
+                 updateCycleNavigation(filteredTopics.length);
+            }
+
+            /**
+             * Atualiza o texto e o estado dos botões de navegação do ciclo.
+             * @param {number} totalItems - O número total de itens (após a filtragem, se houver).
+             */
+            function updateCycleNavigation(totalItems) {
+                const start = totalItems > 0 ? currentCycleStartIndex + 1 : 0;
+                const end = Math.min(currentCycleStartIndex + itemsPerCycle, totalItems);
+                cycleInfoSpan.textContent = `Sessões ${start}-${end} de ${totalItems}`;
+
+                prevCycleBtn.disabled = currentCycleStartIndex === 0;
+                nextCycleBtn.disabled = currentCycleStartIndex + itemsPerCycle >= totalItems;
+            }
+
+             function showNextCycle() {
+                 const filteredTopics = filterTopics();
+                 if (currentCycleStartIndex + itemsPerCycle < filteredTopics.length) {
+                     currentCycleStartIndex += itemsPerCycle;
+                     renderTopicList();
+                 }
+             }
+
+             function showPreviousCycle() {
+                 if (currentCycleStartIndex > 0) {
+                     currentCycleStartIndex = Math.max(0, currentCycleStartIndex - itemsPerCycle);
+                     renderTopicList();
+                 }
+             }
+
+
+            /**
+             * Cria a string HTML para um único item de tópico (usado na lista principal).
+             * Inclui os blocos de tempo clicáveis.
+             * @param {object} topic - O objeto do tópico.
+             * @param {string} context - Identificador da lista ('main-list' neste caso).
+             * @returns {string} - A string HTML para o item.
+             */
+            function createTopicItemHTML(topic, context) {
+                const { badgeClass, badgeText, badgeTitle } = getBadgeDetails(topic.studyType);
+                const showEditButton = topic.studyType === 'original' && context === 'main-list';
+                const hasNotes = topic.notes && topic.notes.trim() !== '';
+
+                const timeBlocksHTML = topic.timeStudied.map((completed, index) => `
+                    <div
+                        class="time-block ${completed ? 'completed' : ''}"
+                        data-id="${topic.id}"
+                        data-index="${index}"
+                        title="Marcar/desmarcar bloco de ${globalBlockSize} min ${index + 1}"
+                        role="button"
+                        tabindex="0"
+                        aria-pressed="${completed}"
+                        aria-label="Bloco de tempo ${index + 1} de ${globalBlockSize} minutos para ${topic.topic}">
+                        ${globalBlockSize}
+                    </div>
+                `).join('');
+
+                const minutesCompleted = topic.timeStudied.filter(Boolean).length * globalBlockSize;
+
+                return `
+                <div class="topic-item fade-in bg-gray-50 rounded-lg p-3 sm:p-4 border border-gray-200 hover:shadow-sm transition-shadow duration-150" data-id="${topic.id}" data-study-type="${topic.studyType}">
+                    <div class="flex justify-between items-start mb-2 gap-2">
+                        <div class="flex-grow min-w-0">
+                            <h3 class="font-medium text-gray-800 truncate" title="${topic.subject}">${topic.subject}</h3>
+                            <p class="text-sm text-gray-600 truncate" title="${topic.topic}">${topic.topic}</p>
+                             <p class="text-xs text-gray-500 mt-1">
+                                <i class="far fa-calendar-alt mr-1"></i> ${formatDate(topic.studyDate)}
+                             </p>
+                        </div>
+                        <div class="flex-shrink-0 flex flex-col items-end space-y-1"> <span class="text-xs px-2 py-1 rounded-full ${badgeClass}" title="${badgeTitle}">
+                                ${badgeText}
+                             </span>
+                             <div class="flex items-center space-x-1">
+                                 ${showEditButton ? `
+                                 <button class="edit-btn p-1 text-indigo-500 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 rounded" data-id="${topic.id}" aria-label="Editar tópico ${topic.topic}">
+                                     <i class="fas fa-edit fa-fw"></i>
+                                 </button>
+                                 ` : '' /* Não mostra botão de editar para revisões */}
+                                 <button class="delete-btn p-1 text-red-500 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-300 rounded" data-id="${topic.id}" aria-label="Excluir ${topic.topic}">
+                                     <i class="fas fa-trash-alt fa-fw"></i>
+                                 </button>
+                             </div>
+                        </div>
+                    </div>
+                     ${hasNotes ? `
+                     <div class="mt-2 pt-2 border-t border-gray-200">
+                         <div class="notes-preview collapsed">${topic.notes}</div>
+                         <span class="toggle-notes">Mostrar mais...</span>
+                     </div>
+                     ` : ''}
+                    <div class="mt-2 pt-2 border-t border-gray-200 flex justify-between items-center">
+                         <div class="flex items-center">
+                            ${timeBlocksHTML}
+                        </div>
+                        <span class="text-xs font-medium ${minutesCompleted > 0 ? 'text-green-700' : 'text-gray-500'}">
+                            <i class="fas fa-stopwatch mr-1"></i> ${minutesCompleted} min
+                        </span>
+                    </div>
+                </div>
+                `;
+            }
+
+             /**
+              * Atualiza a contagem de tópicos exibida.
+              * @param {number|null} [count=null] - O número de tópicos a exibir. Se null, usa o total de tópicos originais.
+              */
+             function updateTopicCount(count = null) {
+                 if (count !== null) {
+                      topicCount.textContent = `${count} sessões`;
+                 } else {
+                     // Conta todas as sessões (originais + revisões) para o total
+                     topicCount.textContent = `${topics.length} sessões`;
+                 }
+             }
+
+            // --- Funções Utilitárias ---
+
+             function loadTopics() {
+                const storedData = localStorage.getItem('studyPlannerData');
+                if (storedData) {
+                    try {
+                        const data = JSON.parse(storedData);
+                        topics = Array.isArray(data.topics) ? data.topics.map(topic => ({
+                            ...topic,
+                            timeStudied: Array.isArray(topic.timeStudied) && topic.timeStudied.length === 2
+                                ? topic.timeStudied
+                                : [false, false],
+                            studyType: topic.studyType || 'original',
+                            id: topic.id || Date.now().toString() + Math.random(),
+                            notes: topic.notes || '',
+                            // Garante que originalId existe para revisões carregadas
+                            originalId: topic.originalId || (topic.studyType === 'original' ? topic.id : undefined)
+                        })) : [];
+                         globalBlockSize = data.blockSize ? parseInt(data.blockSize, 10) : 30;
+                         if (isNaN(globalBlockSize) || globalBlockSize < 10) globalBlockSize = 30;
+                    } catch (e) {
+                        console.error("Erro ao analisar dados do localStorage:", e);
+                        topics = [];
+                        globalBlockSize = 30;
+                        localStorage.removeItem('studyPlannerData');
+                    }
+                } else {
+                    topics = [];
+                    globalBlockSize = 30;
+                }
+                 console.log("Tópicos carregados:", JSON.parse(JSON.stringify(topics))); // Log para debug
+            }
+
+
+            function saveTopics() {
+                try {
+                    const dataToSave = {
+                        topics: topics,
+                        blockSize: globalBlockSize
+                    };
+                    localStorage.setItem('studyPlannerData', JSON.stringify(dataToSave));
+                     console.log("Tópicos salvos no localStorage."); // Log para debug
+                } catch (e) {
+                    console.error("Erro ao salvar dados no localStorage:", e);
+                }
+            }
+
+            function resetForm() {
+                studyForm.reset();
+                setDefaultDate();
+                topicsListInput.disabled = false;
+                topicsListInput.classList.remove('bg-gray-100', 'cursor-not-allowed');
+                 // Após resetar o formulário, volte para o início do ciclo
+                currentCycleStartIndex = 0;
+            }
+
+            function setDefaultDate() {
+                 const today = new Date();
+                 today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+                 studyDateInput.value = today.toISOString().split('T')[0];
+            }
+
+             function formatDate(dateInput, options = { month: 'short', day: 'numeric', weekday: 'short' }) {
+                 const date = typeof dateInput === 'string' ? new Date(dateInput + 'T00:00:00') : dateInput;
+                 let formatted = date.toLocaleDateString('pt-BR', options);
+                 return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+            }
+
+            // isSameDay function is not strictly needed with date strings but kept for potential future use
+            /*
+            function isSameDay(date1, date2) {
+                if (!(date1 instanceof Date) || !(date2 instanceof Date) || isNaN(date1) || isNaN(date2)) {
+                    return false;
+                }
+                return date1.getFullYear() === date2.getFullYear() &&
+                       date1.getMonth() === date2.getMonth() &&
+                       date1.getDate() === date2.getDate();
+            }
+            */
+
+            function getBadgeDetails(studyType) {
+                 switch (studyType) {
+                    case 'original':
+                        return { badgeClass: 'badge-original', badgeText: 'Estudo Inicial', badgeTitle: 'Sessão de Estudo Original' };
+                    case 'revision-4':
+                        return { badgeClass: 'badge-revision-4', badgeText: 'Rev 4 dias', badgeTitle: 'Revisão de 4 Dias' };
+                    case 'revision-10':
+                        return { badgeClass: 'badge-revision-10', badgeText: 'Rev 10 dias', badgeTitle: 'Revisão de 10 Dias' };
+                    default:
+                        return { badgeClass: 'bg-gray-400 text-white', badgeText: 'Desconhecido', badgeTitle: 'Tipo Desconhecido' };
+                }
+            }
+
+            // --- Executa a Inicialização ---
+            init();
+        });
+    </script>
+</body>
+</html>
